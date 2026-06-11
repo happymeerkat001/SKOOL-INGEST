@@ -24,10 +24,20 @@ so you can extend any stage without re-architecting the others.
     python3 -m venv .venv
     .venv/bin/pip install -e .[dev]
 
-    # 1. Drop your Skool cookies.txt into ./cookies/skool.txt
-    #    (Chrome: "Get cookies.txt LOCALLY" extension while logged in)
+    # Optional: install Playwright (only needed for scripts/skool_login.py,
+    # the interactive helper that produces cookies.txt for you).
+    bash scripts/install_playwright.sh
 
-    # 2. Paste your transcript.lol API key into .env
+    # Option A — interactive login helper (recommended; prompts for your
+    # email + password, opens a browser, writes cookies.txt):
+    .venv/bin/python scripts/skool_login.py
+
+    # Option B — manual export:
+    # Chrome: install "Get cookies.txt LOCALLY" extension, log into Skool,
+    # export to ./cookies/skool.txt
+    # Firefox: "cookies.txt" extension. Same idea.
+
+    # Paste your transcript.lol API key
     cp .env.example .env
     $EDITOR .env
 
