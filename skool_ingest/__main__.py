@@ -35,17 +35,36 @@ from .transcript_lol import TranscriptLol, TranscriptLolError
 
 
 def cmd_crawl(args: argparse.Namespace) -> int:
-    from . import skool_crawl  # local import: optional dependency on the skeleton
-    cookies = Path(args.cookies)
-    if not cookies.exists():
+    cookies = Path(args.cookies) if args.cookies else None
+    if args.backend == "notte":
+        from . import skool_crawl_notte
+        if not skool_crawl_notte.is_available():
+            print(
+                "Notte backend requested but NOTTE_API_KEY is unset or "
+                "notte-sdk is not installed. Set NOTTE_API_KEY in .env and "
+                "run: .venv/bin/pip install notte-sdk",
+                file=sys.stderr,
+            )
+            return 2
+        out = Path(args.out)
+        seen: dict[str, manifest.Row] = manifest.load(out)
+        for row in skool_crawl_notte.walk_classroom_notte(
+            args.classroom_url, cookies_path=cookies,
+        ):
+            seen[row.id] = row
+            manifest.upsert(out, row)
+        print(f"wrote {len(seen)} rows to {out} (via Notte)")
+        return 0
+
+    # Default backend: cookies.txt + requests
+    from . import skool_crawl
+    if cookies is None or not cookies.exists():
         print(f"cookies file not found: {cookies}", file=sys.stderr)
         print("export one from your logged-in Skool browser first", file=sys.stderr)
         return 2
     out = Path(args.out)
     seen: dict[str, manifest.Row] = manifest.load(out)
     for row in skool_crawl.walk_classroom(cookies, args.classroom_url):
-        # last-write-wins on id collision; both rows are kept if you also
-        # want to see the second one, dump ``out`` and diff manually.
         seen[row.id] = row
         manifest.upsert(out, row)
     print(f"wrote {len(seen)} rows to {out}")
@@ -109,7 +128,19 @@ def main(argv: list[str] | None = None) -> int:
 
     pcrawl = sub.add_parser("crawl", help="walk the Skool classroom → manifest")
     pcrawl.add_argument("--classroom-url", required=True)
-    pcrawl.add_argument("--cookies", required=True)
+    pcrawl.add_argument(
+        "--cookies",
+        default=None,
+        help="path to Netscape cookies.txt; required for default backend, "
+        "optional but recommended for --backend notte",
+    )
+    pcrawl.add_argument(
+        "--backend",
+        choices=["cookies", "notte"],
+        default="cookies",
+        help="crawler backend; 'notte' uses Notte's cloud browser (set "
+        "NOTTE_API_KEY in .env). Default: cookies (local).",
+    )
     pcrawl.add_argument("--out", default="manifest/skool_videos.csv")
     pcrawl.set_defaults(func=cmd_crawl)
 
