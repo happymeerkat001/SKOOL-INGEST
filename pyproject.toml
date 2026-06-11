@@ -11,11 +11,12 @@ dependencies = [
     "requests>=2.31",
     "python-dotenv>=1.0",
     "beautifulsoup4>=4.12",
-    "playwright>=1.40",  # only used by the cookies helper; safe to remove if you skip it
+    "notte-sdk>=1.0",  # optional in practice; gated by is_available() in skool_crawl_notte
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.4", "ruff>=0.4"]
+login = ["playwright>=1.40"]  # only needed for scripts/skool_login.py
 
 [tool.setuptools.packages.find]
 include = ["skool_ingest*"]
