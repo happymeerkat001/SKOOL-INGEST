@@ -7,14 +7,15 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV="$HERE/../.venv"
+ROOT="$(cd "$HERE/.." && pwd)"
+PY="$ROOT/.venv/bin/python"
 
-if [[ ! -d "$VENV" ]]; then
-  echo "no venv at $VENV; run: python3 -m venv .venv" >&2
+if [[ ! -x "$PY" ]]; then
+  echo "no venv python at $PY; run: cd $ROOT && python3 -m venv .venv" >&2
   exit 1
 fi
 
-echo "installing playwright into $VENV"
-"$VENV/bin/pip" install --quiet playwright
-"$VENV/bin/playwright" install chromium
-echo "done. run: $HERE/skool_login.py"
+echo "installing playwright into $ROOT/.venv"
+"$PY" -m pip install --quiet playwright
+"$PY" -m playwright install chromium
+echo "done. run: $PY $HERE/skool_login.py"

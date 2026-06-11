@@ -24,7 +24,7 @@ import re
 import urllib.parse
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import requests
 from bs4 import BeautifulSoup
@@ -145,6 +145,11 @@ def walk_classroom(
     resp.raise_for_status()
 
     module_urls = _extract_module_links(resp.text, base=classroom_url)
+    normalized_root = classroom_url.rstrip("/")
+    if not module_urls or all(u.rstrip("/") == normalized_root for u in module_urls):
+        next_data_urls = _extract_module_links_from_next_data(resp.text, base=classroom_url)
+        if next_data_urls:
+            module_urls = next_data_urls
     log.info("found %d module links", len(module_urls))
 
     seen: set[str] = set()
@@ -236,7 +241,48 @@ def _extract_module_links(html: str, base: str) -> list[str]:
     return found
 
 
-_POST_HREF_RE = re.compile(r"^/[^/?]+/classroom/[A-Za-z0-9]{6,}$")
+def _extract_module_links_from_next_data(html: str, base: str) -> list[str]:
+    """Fallback: derive course/module URLs from Next.js bootstrap JSON.
+
+    Some logged-in Skool classroom roots no longer render per-course anchors in
+    the visible HTML. They still embed the course list under ``__NEXT_DATA__``
+    → ``props.pageProps.allCourses``. Each item has a short slug in ``name``
+    that maps to ``/classroom/<slug>``.
+    """
+    data = _extract_next_data(html)
+    page_props = ((data.get("props") or {}).get("pageProps") or {}) if isinstance(data, dict) else {}
+    courses = page_props.get("allCourses")
+    if not isinstance(courses, list):
+        return []
+    found: list[str] = []
+    for course in courses:
+        if not isinstance(course, dict):
+            continue
+        slug = course.get("name")
+        if not isinstance(slug, str) or not slug.strip():
+            continue
+        url = f"{base.rstrip('/')}/{slug}"
+        if url and url not in found:
+            found.append(url)
+    return found
+
+
+def _extract_next_data(html: str) -> dict[str, Any]:
+    soup = BeautifulSoup(html, "html.parser")
+    script = soup.find("script", id="__NEXT_DATA__")
+    if script is None:
+        return {}
+    raw = script.string or script.get_text()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+_POST_HREF_RE = re.compile(r"^/[^/?]+/classroom/[A-Za-z0-9]{6,}(?:\?md=[A-Za-z0-9]+)?$")
 
 
 def _extract_post_links(html: str, base: str) -> list[str]:
@@ -266,6 +312,8 @@ def _extract_videos_from_post(html: str, post_url: str, base: str) -> list[manif
       * ``<video src=...>`` or ``<source src=...>``.
       * ``<a href="...">`` whose href is a video URL (people often link to
         the source file/Loom/Vimeo from a post).
+      * ``__NEXT_DATA__`` metadata for Skool pages that render the video only
+        in client bootstrap JSON.
 
     Yields a Row per discovered video URL; de-dupe happens upstream in
     walk_classroom by row id (which is a hash of post+video).
@@ -292,8 +340,15 @@ def _extract_videos_from_post(html: str, post_url: str, base: str) -> list[manif
         if _looks_like_video_url(href):
             candidates.append((_abs(base, href) or href, "anchor"))
 
+    if not candidates:
+        candidates.extend(_extract_video_candidates_from_next_data(html, base=base))
+
     rows: list[manifest.Row] = []
     seen_in_post: set[str] = set()
+    title = _extract_post_title(soup, fallback=post_url)
+    next_data_title = _extract_post_title_from_next_data(html)
+    if next_data_title:
+        title = next_data_title
     for url, _kind in candidates:
         if url in seen_in_post:
             continue
@@ -302,7 +357,7 @@ def _extract_videos_from_post(html: str, post_url: str, base: str) -> list[manif
         rows.append(
             manifest.Row(
                 post_url=post_url,
-                post_title=_extract_post_title(soup, fallback=post_url),
+                post_title=title,
                 post_author="",  # filled in later if Skool exposes it in the DOM
                 post_date="",
                 video_url=url,
@@ -321,6 +376,71 @@ def _extract_post_title(soup: BeautifulSoup, fallback: str) -> str:
     if soup.title and soup.title.string:
         return soup.title.string.strip()
     return fallback
+
+
+def _extract_post_title_from_next_data(html: str) -> str | None:
+    child = _extract_selected_child_course(html)
+    if child is None:
+        return None
+    metadata = child.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    title = metadata.get("title")
+    return title.strip() if isinstance(title, str) and title.strip() else None
+
+
+def _extract_video_candidates_from_next_data(html: str, *, base: str) -> list[tuple[str, str]]:
+    child = _extract_selected_child_course(html)
+    if child is None:
+        return []
+    metadata = child.get("metadata")
+    if not isinstance(metadata, dict):
+        return []
+
+    found: list[tuple[str, str]] = []
+    video_link = metadata.get("videoLink")
+    if isinstance(video_link, str) and video_link.strip():
+        found.append((video_link.strip(), "next-data-video-link"))
+
+    video_id = metadata.get("videoId")
+    next_data = _extract_next_data(html)
+    page_props = ((next_data.get("props") or {}).get("pageProps") or {}) if isinstance(next_data, dict) else {}
+    video = page_props.get("video")
+    if (
+        isinstance(video_id, str)
+        and video_id.strip()
+        and isinstance(video, dict)
+        and str(video.get("id") or "").strip() == video_id.strip()
+    ):
+        playback_id = video.get("playbackId")
+        playback_token = video.get("playbackToken")
+        if isinstance(playback_id, str) and playback_id.strip():
+            url = f"https://stream.mux.com/{playback_id.strip()}.m3u8"
+            if isinstance(playback_token, str) and playback_token.strip():
+                url = f"{url}?token={playback_token.strip()}"
+            found.append((url, "next-data-mux"))
+    return found
+
+
+def _extract_selected_child_course(html: str) -> dict[str, Any] | None:
+    next_data = _extract_next_data(html)
+    page_props = ((next_data.get("props") or {}).get("pageProps") or {}) if isinstance(next_data, dict) else {}
+    selected_module = page_props.get("selectedModule")
+    course = page_props.get("course")
+    if not isinstance(selected_module, str) or not isinstance(course, dict):
+        return None
+    children = course.get("children")
+    if not isinstance(children, list):
+        return None
+    for child in children:
+        if not isinstance(child, dict):
+            continue
+        child_course = child.get("course")
+        if not isinstance(child_course, dict):
+            continue
+        if str(child_course.get("id") or "") == selected_module:
+            return child_course
+    return None
 
 
 _VIDEO_HOST_HINTS = (

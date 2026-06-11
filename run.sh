@@ -40,17 +40,33 @@ for arg in "$@"; do
   esac
 done
 
-# Load .env into the shell for the duration of this script.
+# Load .env for the duration of this script.
 if [[ ! -f .env ]]; then
   echo "ERROR: .env not found at $HERE/.env" >&2
-  echo "Run: cp .env.example .env  &&  \$EDITOR .env" >&2
+  echo "Run: cp .env.example .env  &&  $EDITOR .env" >&2
   exit 2
 fi
 
-# shellcheck disable=SC1091
-set -a; source .env; set +a
+# Parse .env safely even if it contains keys that are not valid shell variable
+# names (for example Transcript.lol_Login from a copied credential dump).
+# We only import the vars this script actually uses.
+while IFS='=' read -r key value; do
+  case "$key" in
+    TRANSCRIPT_LOL_API_KEY|SKOOL_CLASSROOM_URL|VAULT_DIR|NOTTE_API_KEY|TRANSCRIPT_LOL_TIER)
+      export "$key=$value"
+      ;;
+  esac
+done < <(
+  .venv/bin/python - <<'PY'
+from dotenv import dotenv_values
+for k, v in dotenv_values('.env').items():
+    if v is None:
+        continue
+    print(f"{k}={v}")
+PY
+)
 
-if [[ -z "${TRANSCRIPT_LOL_API_KEY:-}" || "${TRANSCRIPT_LOL_API_KEY}" == "*** ]]; then
+if [[ "$DRY_RUN" != "1" ]] && [[ -z "${TRANSCRIPT_LOL_API_KEY:-}" || "${TRANSCRIPT_LOL_API_KEY}" == "***" ]]; then
   echo "ERROR: TRANSCRIPT_LOL_API_KEY is missing or still the placeholder in .env" >&2
   echo "Get an API key from https://transcript.lol → API Docs, then update .env" >&2
   exit 2
