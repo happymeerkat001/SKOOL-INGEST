@@ -20,7 +20,7 @@ so you can extend any stage without re-architecting the others.
 
 ## Quick start
 
-    cd ~/Code/skool-ingest
+    cd ~/Documents/Code/skool-ingest
     python3 -m venv .venv
     .venv/bin/pip install -e .[dev]
 
