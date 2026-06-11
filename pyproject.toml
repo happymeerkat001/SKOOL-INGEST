@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skool-ingest"
+version = "0.1.0"
+description = "Walk Skool classrooms, extract video URLs, and fan them out to transcript.lol for URL-to-transcript conversion."
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31",
+    "python-dotenv>=1.0",
+    "beautifulsoup4>=4.12",
+    "playwright>=1.40",  # only used by the cookies helper; safe to remove if you skip it
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "ruff>=0.4"]
+
+[tool.setuptools.packages.find]
+include = ["skool_ingest*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

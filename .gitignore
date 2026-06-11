@@ -1,0 +1,27 @@
+# secrets and session material
+.env
+.env.*
+!.env.example
+cookies/
+*.txt
+!cookies/.gitkeep
+manifest/skool_cookies_*.txt
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# run outputs
+logs/
+captures/
+manifest/*.json
+!manifest/.gitkeep
