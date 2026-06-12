@@ -57,6 +57,62 @@ so you can extend any stage without re-architecting the others.
     # 6. Check progress:
     .venv/bin/python -m skool_ingest status --manifest manifest/skool_videos.csv
 
+## AI Lead Qualification Engine (`src/`)
+
+Native engine built from `FB_Lead_Qualification_Architecture.md` (reverse-
+engineered from the 20 archived masterclass transcripts). Deps isolated to
+the `agent` extra: fastapi, uvicorn, httpx.
+
+    src/
+      main.py                # FastAPI: POST /webhook/fb-inbound, GET /healthz
+      agent_core/
+        templates.py         # gate template registry, COMPLIANCE_EXIT, target=333
+        agents.py            # OccupancyEvaluator / ShowingCoordinator / IncomeVerifier
+        router.py            # stage dispatch + Gemini personalization + outbound layer
+    tests/test_agent_core.py # 26 tests
+
+Design:
+- **Deterministic-first**: binary gate failure (pets/kids/multi-occupant,
+  income < 2.5x rent) returns COMPLIANCE_EXIT instantly — zero LLM tokens.
+- **Gemini via httpx REST** (`GEMINI_API_KEY`, `GEMINI_MODEL` env). Unset key
+  = template-only mode. Any HTTP error falls back to the raw template.
+- **Speed-to-lead SLA**: per-request latency in body (`latency_ms`, `sla_met`
+  < 20 s) and `X-Latency-MS` header; breach logs a warning.
+- **Outbound layer** (`router.py`): OpenPhone Messages API
+  (`https://api.openphone.com/v1/messages`, payload `{recipient, body, media?}`,
+  `Authorization: $OPENPHONE_API_KEY`). Missing/blank key → prints
+  "WARN: OPENPHONE_API_KEY unset. Operating in local simulation mode." and
+  echoes the payload to console instead of raising. n8n callback posts the
+  gate result to `N8N_WEBHOOK_URL` with `X-N8N-API-KEY: $N8N_API_KEY`.
+- **Stateless**: n8n owns lead state; engine is pure per-request.
+
+Run:
+
+    .venv/bin/python -m pip install -e ".[agent,dev]"
+    OPENPHONE_API_KEY=... GEMINI_API_KEY=... .venv/bin/python src/main.py
+    curl -s localhost:8000/webhook/fb-inbound -X POST \
+      -H 'content-type: application/json' \
+      -d '{"lead_id":"t1","messages":[{"text":"me and my dog"}],
+           "metadata":{"rent":800,"stage":1,"has_pets":true,"phone":"+15551234567"}}'
+
+### Done / Next
+
+Done:
+- [x] 20/20 masterclass recordings transcribed locally + archived (iCloud + `r2:skool-archive`)
+- [x] 20/20 mp4s ingested into transcript.lol from R2 presigned URLs (`TRANSCRIPT_LOL_R2_PLAYBOOK.md`)
+- [x] Architecture blueprint extracted (`FB_Lead_Qualification_Architecture.md`)
+- [x] Engine: gates, router, Gemini personalization, FastAPI webhook, SLA tracking
+- [x] Outbound: OpenPhone payload/header contract + simulation mode, n8n callback
+- [x] 111 tests green, ruff clean
+
+Next:
+- [ ] Paste chatbot persona (playbook §3) into transcript.lol UI (manual, no API)
+- [ ] Set real `OPENPHONE_API_KEY` / `N8N_WEBHOOK_URL` / `GEMINI_API_KEY` in `.env`,
+      verify against OpenPhone live docs (field names + auth scheme) before first send
+- [ ] Point self-hosted n8n FB-inbound workflow at `POST /webhook/fb-inbound`
+- [ ] Deploy engine (uvicorn behind reverse proxy or launchd) + smoke test end-to-end
+- [ ] Optional: configure git remote and push (repo currently local-only)
+
 ## Why "skeleton" for the crawler?
 
 Because the right backend depends on what your Skool group actually looks
