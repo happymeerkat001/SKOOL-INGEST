@@ -108,14 +108,38 @@ STYLE
 Terse. Tables for enumerations. No preamble, no summaries unless asked.
 ```
 
-## 4. Status
+## 4. Status (corrected 2026-06-12)
 
 - [x] Presigned URL schema verified (206 ranged GET)
 - [x] transcript.lol auth verified (Firebase bearer)
 - [x] Pilot: Coliving Construction Mastermind 0917 mp4 — COMPLETED, diarized transcript returned
-- [x] Batch: 19/19 mp4s COMPLETED, 0 failures (log: manifest/local_ingest/tlol-batch.log)
-- [x] All 20 recordings terminal in transcript.lol space 678568d76d74d77ee0ef382c
+- [ ] ~~Batch: 19/19 mp4s COMPLETED~~ **WRONG — earlier claim trusted shell exit codes.**
+      Reality (log: manifest/local_ingest/tlol-batch.log): **13/20 recordings FAILED**
+      server-side ("Download failed! ... use the file upload option instead"),
+      ~30-50 s after submit on the ~500 MB looped mp4s. Only 7 completed.
+- [x] mp3 retry attempted (manifest/local_ingest/tlol-retry-mp3.log):
+      **0/13 — MEDIA_IMPORT_FAILED within ~8 s** even on ~25 MB mp3s.
+      URL imports from presigned `*.r2.cloudflarestorage.com` are effectively dead
+      (instant rejection; possibly HEAD preflight vs GET-only signature, or their
+      fetcher blocked). Not fixable by retrying.
+- [x] Finding: transcript.lol converts file imports to **audio-only** playback —
+      in-app video viewing is not achievable via URL import. Video playback moves
+      to R2 directly (public dev URL + index page).
+- [x] R2 Public Development URL enabled: `pub-cb322ef18aa04b85b06eaaa7158ab209.r2.dev`
+      HEAD returns 200, Content-Type correct, full download works.
+- [x] Retry with public dev mp3 URLs: **still MEDIA_IMPORT_FAILED** (0/13).
+      transcript.lol's importer rejects these files regardless of URL format.
+      (log: manifest/local_ingest/tlol-retry-pubdev.log; earlier script falsely
+      reported ok=13 — grep matched "Firebase sign-in succeeded" not recording status.)
+- [x] Video index built: `manifest/video_index.html` + vault `Video Index.md` —
+      20 permanent clickable R2 pub-dev links for mp4/mp3 browser streaming.
+- [ ] Manual file upload: drag 13 mp3s from iCloud SkoolArchive/audio/ into
+      transcript.lol UI (only remaining path; ~5 min task for human)
 - [ ] Chatbot persona injected (manual UI step — config UI has no API; prompt in §3)
+
+Note: no upload API exists in either client (URL-submit only); UI file upload uses
+a native file picker, not automatable. Local whisper transcripts for all 20 already
+exist in the vault as fallback corpus.
 
 ## 5. Wall-clock
 

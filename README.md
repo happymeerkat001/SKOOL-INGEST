@@ -99,13 +99,16 @@ Run:
 
 Done:
 - [x] 20/20 masterclass recordings transcribed locally + archived (iCloud + `r2:skool-archive`)
-- [x] 20/20 mp4s ingested into transcript.lol from R2 presigned URLs (`TRANSCRIPT_LOL_R2_PLAYBOOK.md`)
+- [x] transcript.lol ingestion: 7/20 succeeded; 13 failed on their downloader, mp3 retry
+      also rejected — blocked on R2 public dev URL toggle (see `TRANSCRIPT_LOL_R2_PLAYBOOK.md` §4)
 - [x] Architecture blueprint extracted (`FB_Lead_Qualification_Architecture.md`)
 - [x] Engine: gates, router, Gemini personalization, FastAPI webhook, SLA tracking
 - [x] Outbound: OpenPhone payload/header contract + simulation mode, n8n callback
 - [x] 111 tests green, ruff clean
 
 Next:
+- [ ] Enable R2 Public Development URL on skool-archive (Cloudflare dashboard, manual) →
+      resubmit 13 failed recordings as pub-dev mp3 URLs + generate video index page
 - [ ] Paste chatbot persona (playbook §3) into transcript.lol UI (manual, no API)
 - [ ] Set real `OPENPHONE_API_KEY` / `N8N_WEBHOOK_URL` / `GEMINI_API_KEY` in `.env`,
       verify against OpenPhone live docs (field names + auth scheme) before first send
