@@ -150,10 +150,39 @@ Review workflow:
 - `review.html` is read-only for fast scanning. It uses local links back to raw
   captures and escapes lead text.
 
+Posting draft queue:
+- Drafts are local copy-paste records only. They help prepare a consistent
+  2:30am posting cadence without auto-posting to Facebook.
+- `draft-add` creates a draft from a deterministic template or operator-written
+  copy. The default slot is the next free 2:30am local time, one draft per night.
+- `draft-export` writes `post_queue.csv`, `post_queue.html`, and
+  `post_queue.md`; the operator copies text from those files and manually
+  schedules it in Meta Business Suite.
+- `draft-sync` reads back only checklist fields:
+  `approved_by_human`, `scheduled_in_meta_business_suite`, `posted_at`, `notes`.
+- `draft-publish` is a refusal stub in v1. It always exits non-zero and points
+  back to manual Meta Business Suite scheduling.
+
+Draft commands:
+
+    .venv/bin/python -m fb_leads draft-add --topic room-303 --template room_listing \
+        --price '$650/mo' --location 'Houston, TX' --room-desc 'furnished private room' \
+        --move-in 'August 1' --surface marketplace
+    .venv/bin/python -m fb_leads draft-list --drafts manifest/fb_leads/post_drafts.jsonl
+    .venv/bin/python -m fb_leads draft-export --drafts manifest/fb_leads/post_drafts.jsonl --out-dir manifest/fb_leads
+    .venv/bin/python -m fb_leads draft-sync --csv manifest/fb_leads/post_queue.csv --drafts manifest/fb_leads/post_drafts.jsonl
+
+Template safety note: template copy is intentionally static and should receive a
+human fair-housing / ToS review whenever templates change. Screening constraints
+belong in the conversation/qualification stage, not in ad copy.
+
 Compliance / safety stance:
 - v1 is file-based and read-only: no live fetching from Facebook.
 - `--live` on ingest refuses with a clear "not implemented in v1" message.
 - No outreach or automated messaging exists in this harness.
+- No auto-posting exists in this harness; `draft-publish` refuses even when the
+  future API env gate is set.
+- No fake or secondary accounts are part of this workflow.
 - No credential/cookie storage, anti-detection, proxy rotation, CAPTCHA solving,
   or rate-limit evasion exists in `fb_leads/`.
 - Facebook-derived lead data can contain personal display names; keep
