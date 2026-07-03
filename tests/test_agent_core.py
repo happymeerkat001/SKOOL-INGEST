@@ -1,8 +1,15 @@
 """Tests for the AI lead qualification engine (src/agent_core + src/main)."""
 
 import asyncio
+import json
+import os
+import socket
+import subprocess
 import sys
+import tempfile
+import time
 import unittest
+import urllib.request
 from pathlib import Path
 from unittest import mock
 
@@ -36,11 +43,32 @@ from agent_core.templates import (  # noqa: E402
     get_template,
 )
 from main import app  # noqa: E402
+from main import integration_summary, load_engine_config, validate_engine_config  # noqa: E402
 
 
 def ctx(**kw) -> LeadContext:
     kw.setdefault("rent", 800.0)
     return LeadContext(**kw)
+
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _wait_for_healthz(base_url: str, timeout: float = 10.0) -> None:
+    deadline = time.time() + timeout
+    last_error: Exception | None = None
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(f"{base_url}/healthz", timeout=0.5) as resp:
+                if resp.status == 200:
+                    return
+        except Exception as exc:  # pragma: no cover - only reported on timeout
+            last_error = exc
+        time.sleep(0.1)
+    raise RuntimeError(f"service did not become healthy: {last_error}")
 
 
 class TemplateTests(unittest.TestCase):
@@ -146,12 +174,17 @@ class RouterTests(unittest.TestCase):
 
 class OutboundNetworkTests(unittest.TestCase):
     def test_openphone_payload_contract(self):
-        payload = openphone_payload("+15551234567", "Room available")
-        self.assertEqual(payload, {"recipient": "+15551234567", "body": "Room available"})
+        payload = openphone_payload("+155****4567", "Room available", "+155****0000")
+        self.assertEqual(
+            payload,
+            {"content": "Room available", "from": "+155****0000", "to": ["+155****4567"]},
+        )
 
-    def test_openphone_payload_with_media(self):
-        payload = openphone_payload("+15551234567", "Photos", media=["https://x/a.jpg"])
-        self.assertEqual(payload["media"], ["https://x/a.jpg"])
+    def test_openphone_payload_rejects_media_for_text_endpoint(self):
+        with self.assertRaises(ValueError):
+            openphone_payload(
+                "+155****4567", "Photos", "+155****0000", media=["https://x/a.jpg"]
+            )
 
     def test_openphone_headers(self):
         headers = openphone_headers("op-key")
@@ -171,22 +204,39 @@ class OutboundNetworkTests(unittest.TestCase):
     def test_dispatcher_simulation_mode_on_missing_key(self):
         for key in (None, "", "   "):
             client = mock.AsyncMock(spec=httpx.AsyncClient)
-            dispatcher = OpenPhoneDispatcher(api_key=key, client=client)
+            dispatcher = OpenPhoneDispatcher(
+                api_key=key, from_number="+155****0000", live=True, client=client
+            )
             with mock.patch("builtins.print") as print_mock:
-                result = asyncio.run(dispatcher.send("+15551234567", "hi"))
+                result = asyncio.run(dispatcher.send("+155****4567", "hi"))
             self.assertFalse(result["sent"])
             self.assertTrue(result["simulated"])
-            self.assertEqual(result["payload"]["recipient"], "+15551234567")
+            self.assertEqual(result["payload"]["to"], ["+155****4567"])
             print_mock.assert_any_call(SIMULATION_WARNING)
             client.post.assert_not_called()
 
-    def test_dispatcher_sends_with_key(self):
+    def test_dispatcher_simulates_when_mode_is_not_live_even_with_key(self):
+        client = mock.AsyncMock(spec=httpx.AsyncClient)
+        dispatcher = OpenPhoneDispatcher(
+            api_key="op-key", from_number="+155****0000", live=False, client=client
+        )
+
+        with mock.patch("builtins.print"):
+            result = asyncio.run(dispatcher.send("+155****4567", "hi"))
+
+        self.assertFalse(result["sent"])
+        self.assertTrue(result["simulated"])
+        client.post.assert_not_called()
+
+    def test_dispatcher_sends_with_key_and_live_mode(self):
         resp = mock.Mock(status_code=202)
         resp.raise_for_status = mock.Mock()
         client = mock.AsyncMock(spec=httpx.AsyncClient)
         client.post.return_value = resp
-        dispatcher = OpenPhoneDispatcher(api_key="op-key", client=client)
-        result = asyncio.run(dispatcher.send("+15551234567", "hi", media=["https://x/a.jpg"]))
+        dispatcher = OpenPhoneDispatcher(
+            api_key="op-key", from_number="+155****0000", live=True, client=client
+        )
+        result = asyncio.run(dispatcher.send("+155****4567", "hi"))
         self.assertTrue(result["sent"])
         self.assertFalse(result["simulated"])
         args, kwargs = client.post.call_args
@@ -194,17 +244,76 @@ class OutboundNetworkTests(unittest.TestCase):
         self.assertEqual(kwargs["headers"]["Authorization"], "op-key")
         self.assertEqual(
             kwargs["json"],
-            {"recipient": "+15551234567", "body": "hi", "media": ["https://x/a.jpg"]},
+            {"content": "hi", "from": "+155****0000", "to": ["+155****4567"]},
         )
 
     def test_dispatcher_http_error_no_raise(self):
         client = mock.AsyncMock(spec=httpx.AsyncClient)
         client.post.side_effect = httpx.ConnectError("down")
-        dispatcher = OpenPhoneDispatcher(api_key="op-key", client=client)
-        result = asyncio.run(dispatcher.send("+15551234567", "hi"))
+        dispatcher = OpenPhoneDispatcher(
+            api_key="op-key", from_number="+155****0000", live=True, client=client
+        )
+        result = asyncio.run(dispatcher.send("+155****4567", "hi"))
         self.assertFalse(result["sent"])
         self.assertFalse(result["simulated"])
         self.assertIn("error", result)
+
+
+class EngineConfigTests(unittest.TestCase):
+    def test_engine_mode_defaults_to_simulation_even_with_openphone_key(self):
+        with mock.patch.dict(os.environ, {"OPENPHONE_API_KEY": "op-key"}, clear=True):
+            config = load_engine_config()
+
+        self.assertEqual(config.mode, "simulation")
+        self.assertFalse(config.live)
+
+    def test_live_mode_requires_key_from_number_and_webhook_token(self):
+        with mock.patch.dict(os.environ, {"ENGINE_MODE": "live"}, clear=True):
+            config = load_engine_config()
+
+        with self.assertRaisesRegex(RuntimeError, "OPENPHONE_API_KEY"):
+            validate_engine_config(config)
+
+    def test_live_mode_accepts_required_openphone_and_token_config(self):
+        with mock.patch.dict(
+            os.environ,
+            {
+                "ENGINE_MODE": "live",
+                "OPENPHONE_API_KEY": "op-key",
+                "OPENPHONE_FROM_NUMBER": "+155****0000",
+                "ENGINE_WEBHOOK_TOKEN": "secret",
+            },
+            clear=True,
+        ):
+            config = load_engine_config()
+
+        validate_engine_config(config)
+        self.assertEqual(integration_summary(config)["openphone"], "live")
+
+    def test_integration_summary_reports_disabled_services(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            summary = integration_summary(load_engine_config())
+
+        self.assertEqual(summary["mode"], "simulation")
+        self.assertEqual(summary["openphone"], "simulated")
+        self.assertEqual(summary["gemini"], "disabled")
+        self.assertEqual(summary["n8n"], "disabled")
+
+    def test_startup_logs_integration_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "ENGINE_WEBHOOK_TOKEN": "secret",
+                    "ENGINE_AUDIT_LOG": str(Path(tmp) / "audit.jsonl"),
+                },
+                clear=True,
+            ):
+                with self.assertLogs("agent_core", level="INFO") as logs:
+                    with TestClient(app):
+                        pass
+
+        self.assertTrue(any("engine integration summary" in line for line in logs.output))
 
 
 class WebhookTests(unittest.TestCase):
@@ -242,8 +351,9 @@ class WebhookTests(unittest.TestCase):
         self.assertTrue(body["passed"])
         self.assertTrue(body["dispatch"]["simulated"])
         self.assertFalse(body["dispatch"]["sent"])
-        self.assertEqual(body["dispatch"]["payload"]["recipient"], "+15551234567")
-        self.assertEqual(body["dispatch"]["payload"]["body"], body["reply"])
+        self.assertEqual(len(body["dispatch"]["payload"]["to"]), 1)
+        self.assertTrue(body["dispatch"]["payload"]["to"][0].startswith("+155"))
+        self.assertEqual(body["dispatch"]["payload"]["content"], body["reply"])
 
     def test_webhook_no_phone_no_dispatch(self):
         with TestClient(app) as client:
@@ -257,9 +367,181 @@ class WebhookTests(unittest.TestCase):
             )
         self.assertIsNone(resp.json()["dispatch"])
 
+    def test_webhook_requires_token_when_configured(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            audit_path = str(Path(tmp) / "audit.jsonl")
+            with mock.patch.dict(
+                os.environ,
+                {"ENGINE_WEBHOOK_TOKEN": "secret", "ENGINE_AUDIT_LOG": audit_path},
+                clear=True,
+            ):
+                with TestClient(app) as client:
+                    missing = client.post(
+                        "/webhook/fb-inbound",
+                        json={
+                            "lead_id": "auth-missing",
+                            "messages": [{"text": "hi"}],
+                            "metadata": {"rent": 800, "stage": 1},
+                        },
+                    )
+                    ok = client.post(
+                        "/webhook/fb-inbound",
+                        headers={"X-Engine-Token": "secret"},
+                        json={
+                            "lead_id": "auth-ok",
+                            "messages": [{"text": "hi"}],
+                            "metadata": {"rent": 800, "stage": 1},
+                        },
+                    )
+
+        self.assertEqual(missing.status_code, 401)
+        self.assertEqual(ok.status_code, 200)
+
+    def test_live_mode_without_webhook_token_fails_startup(self):
+        with mock.patch.dict(
+            os.environ,
+            {
+                "ENGINE_MODE": "live",
+                "OPENPHONE_API_KEY": "op-key",
+                "OPENPHONE_FROM_NUMBER": "+155****0000",
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "ENGINE_WEBHOOK_TOKEN"):
+                with TestClient(app):
+                    pass
+
+    def test_webhook_writes_dispatch_audit_record(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            audit_path = Path(tmp) / "engine_dispatch.jsonl"
+            with mock.patch.dict(
+                os.environ,
+                {"ENGINE_WEBHOOK_TOKEN": "secret", "ENGINE_AUDIT_LOG": str(audit_path)},
+                clear=True,
+            ):
+                with TestClient(app) as client:
+                    with mock.patch("builtins.print"):
+                        resp = client.post(
+                            "/webhook/fb-inbound",
+                            headers={"X-Engine-Token": "secret"},
+                            json={
+                                "lead_id": "audit-1",
+                                "messages": [{"text": "Just me"}],
+                                "metadata": {
+                                    "rent": 800,
+                                    "stage": 1,
+                                    "phone": "+155****4567",
+                                },
+                            },
+                        )
+
+            records = [json.loads(line) for line in audit_path.read_text().splitlines()]
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["lead_id"], "audit-1")
+        self.assertEqual(records[0]["mode"], "simulation")
+        self.assertTrue(records[0]["simulated"])
+        self.assertFalse(records[0]["sent"])
+
+    def test_audit_write_failure_does_not_block_response(self):
+        with mock.patch.dict(os.environ, {"ENGINE_WEBHOOK_TOKEN": "secret"}, clear=True):
+            with TestClient(app) as client:
+                with mock.patch("main.append_audit_record", side_effect=OSError("disk full")):
+                    resp = client.post(
+                        "/webhook/fb-inbound",
+                        headers={"X-Engine-Token": "secret"},
+                        json={
+                            "lead_id": "audit-fail",
+                            "messages": [{"text": "hi"}],
+                            "metadata": {"rent": 800, "stage": 1},
+                        },
+                    )
+
+        self.assertEqual(resp.status_code, 200)
+
     def test_healthz(self):
-        with TestClient(app) as client:
-            self.assertEqual(client.get("/healthz").json(), {"status": "ok"})
+        with mock.patch.dict(os.environ, {"ENGINE_WEBHOOK_TOKEN": "secret"}, clear=True):
+            with TestClient(app) as client:
+                self.assertEqual(client.get("/healthz").json(), {"status": "ok"})
+
+
+class SmokeScriptTests(unittest.TestCase):
+    def test_engine_smoke_script_passes_against_simulated_service_and_rejects_bad_token(self):
+        port = _free_port()
+        base_url = f"http://127.0.0.1:{port}"
+        with tempfile.TemporaryDirectory() as tmp:
+            env = os.environ.copy()
+            env.update(
+                {
+                    "ENGINE_MODE": "simulation",
+                    "ENGINE_WEBHOOK_TOKEN": "secret",
+                    "ENGINE_AUDIT_LOG": str(Path(tmp) / "audit.jsonl"),
+                    "PYTHONPATH": str(REPO / "src"),
+                }
+            )
+            proc = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "uvicorn",
+                    "src.main:app",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    str(port),
+                ],
+                cwd=REPO,
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                _wait_for_healthz(base_url)
+                ok = subprocess.run(
+                    [
+                        sys.executable,
+                        "scripts/engine_smoke.py",
+                        "--base-url",
+                        base_url,
+                        "--token",
+                        "secret",
+                    ],
+                    cwd=REPO,
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=15,
+                )
+                bad = subprocess.run(
+                    [
+                        sys.executable,
+                        "scripts/engine_smoke.py",
+                        "--base-url",
+                        base_url,
+                        "--token",
+                        "wrong",
+                    ],
+                    cwd=REPO,
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=15,
+                )
+            finally:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
+
+        self.assertEqual(ok.returncode, 0, ok.stderr)
+        self.assertIn("engine smoke passed", ok.stdout)
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("webhook failed", bad.stderr)
 
 
 if __name__ == "__main__":

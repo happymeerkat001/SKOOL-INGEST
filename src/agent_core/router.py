@@ -21,18 +21,26 @@ from agent_core.agents import (
 
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 
-# --- Outbound network contracts (OpenPhone + self-hosted n8n) -----------------
+# --- Outbound network contracts (OpenPhone/Quo + self-hosted n8n) -------------
 
-OPENPHONE_ENDPOINT = "https://api.openphone.com/v1/messages"
-SIMULATION_WARNING = "WARN: OPENPHONE_API_KEY unset. Operating in local simulation mode."
+OPENPHONE_ENDPOINT = "https://api.quo.com/v1/messages"
+SIMULATION_WARNING = "WARN: ENGINE_MODE is not live. Operating in local simulation mode."
 
 
-def openphone_payload(recipient: str, body: str, media: list[str] | None = None) -> dict:
-    """Exact OpenPhone Messages API body contract: recipient, body, optional media[]."""
-    payload: dict = {"recipient": recipient, "body": body}
+def openphone_payload(
+    recipient: str,
+    body: str,
+    sender: str,
+    media: list[str] | None = None,
+) -> dict:
+    """Exact Quo/OpenPhone v1 text message body: content, from, to[].
+
+    Verified against the public OpenAPI spec linked from https://www.openphone.com/docs:
+    https://openphone-public-api-prod.s3.us-west-2.amazonaws.com/public/openphone-public-api-v1-prod.json
+    """
     if media:
-        payload["media"] = list(media)
-    return payload
+        raise ValueError("Quo/OpenPhone v1 text messages do not accept media attachments")
+    return {"content": body, "from": sender, "to": [recipient]}
 
 
 def openphone_headers(api_key: str) -> dict[str, str]:
@@ -59,20 +67,26 @@ def n8n_headers(api_key: str | None) -> dict[str, str]:
 
 
 class OpenPhoneDispatcher:
-    """Sends qualified replies through OpenPhone; degrades to local simulation
-    (payload echoed to console) when OPENPHONE_API_KEY is missing or blank."""
+    """Sends qualified replies through OpenPhone/Quo when explicitly live.
+
+    Any non-live mode degrades to local simulation even when credentials exist.
+    """
 
     def __init__(
         self,
         api_key: str | None = None,
+        from_number: str | None = None,
+        live: bool = False,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self.api_key = (api_key or "").strip()
+        self.from_number = (from_number or "").strip()
+        self.live = live
         self.client = client
 
     async def send(self, recipient: str, body: str, media: list[str] | None = None) -> dict:
-        payload = openphone_payload(recipient, body, media)
-        if not self.api_key or self.client is None:
+        payload = openphone_payload(recipient, body, self.from_number, media)
+        if not self.live or not self.api_key or self.client is None:
             print(SIMULATION_WARNING)
             print(payload)
             return {"sent": False, "simulated": True, "payload": payload}
