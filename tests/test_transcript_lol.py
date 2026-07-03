@@ -16,7 +16,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from skool_ingest.transcript_lol import Job, TranscriptLol, TranscriptLolError  # noqa: E402
+from skool_ingest.transcript_lol import TranscriptLol, TranscriptLolError  # noqa: E402
 
 
 def make_client():

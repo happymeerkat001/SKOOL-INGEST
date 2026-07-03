@@ -29,6 +29,11 @@ captures/
 tests/fixtures/**/.DS_Store
 manifest/*.json
 !manifest/.gitkeep
+# Skool video index regenerates from scripts/build_video_index.py + crawls;
+# never commit the rolling snapshots — rebuild them locally instead.
+manifest/skool_videos.before-*.csv
+manifest/skool_videos.merged.csv
+manifest/video_index.html
 manifest/local_ingest/
 manifest/fb_leads/
 .claude/

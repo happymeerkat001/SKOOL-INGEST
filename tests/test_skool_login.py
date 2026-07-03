@@ -32,7 +32,7 @@ def test_write_netscape_basic(tmp_path: Path):
     # Header is present
     assert text.startswith("# Netscape HTTP Cookie File")
     # Each cookie is tab-separated
-    lines = [l for l in text.splitlines() if l and not l.startswith("#")]
+    lines = [line for line in text.splitlines() if line and not line.startswith("#")]
     assert len(lines) == 2
     # First cookie preserves the leading dot
     parts = lines[0].split("\t")
@@ -56,7 +56,7 @@ def test_write_netscape_session_cookie_handled(tmp_path: Path):
     ]
     out = tmp_path / "cookies.txt"
     _write_netscape(cookies, out)
-    line = [l for l in out.read_text().splitlines() if l and not l.startswith("#")][0]
+    line = [line for line in out.read_text().splitlines() if line and not line.startswith("#")][0]
     assert line.split("\t")[4] == "0"  # -1 → 0
 
 
