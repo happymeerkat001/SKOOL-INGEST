@@ -23,7 +23,12 @@ __pycache__/
 # run outputs
 logs/
 captures/
+!tests/fixtures/**/captures/
+!tests/fixtures/**/captures/**
+!tests/fixtures/**/*.txt
+tests/fixtures/**/.DS_Store
 manifest/*.json
 !manifest/.gitkeep
 manifest/local_ingest/
+manifest/fb_leads/
 .claude/

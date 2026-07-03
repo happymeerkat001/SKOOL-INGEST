@@ -95,6 +95,74 @@ Run:
       -d '{"lead_id":"t1","messages":[{"text":"me and my dog"}],
            "metadata":{"rent":800,"stage":1,"has_pets":true,"phone":"+15551234567"}}'
 
+## FB lead triage harness (`fb_leads/`)
+
+Local, read-only harness for turning operator-saved Facebook captures into a
+triaged review queue. Version 1 does **not** log in, scrape live Facebook,
+store credentials/cookies, send messages, post, rotate proxies, solve CAPTCHAs,
+or bypass platform controls. A logged-in human saves pages/text/CSV exports they
+are authorized to view, then the local pipeline parses and scores those files.
+
+Layout:
+
+    fb_leads/
+      models.py      # LeadCandidate dataclass + JSONL store
+      extract.py     # saved HTML/text/CSV extraction + sidecars
+      ingest.py      # capture-dir walk + merge-preserving store update
+      scoring.py     # deterministic explainable local scoring rules
+      report.py      # review_queue.csv, review.html, CSV sync-back
+      __main__.py    # CLI: ingest | score | report | sync | status | run
+
+Manual capture procedure:
+
+1. In your normal browser, log in to Facebook yourself.
+2. Save visible/authorized Marketplace, group, or page material under
+   `captures/fb/` using Save Page As, copy/paste to `.txt`, or CSV export.
+3. Optional: add `<capture>.meta.json` beside a capture for source URL, source
+   type, captured timestamp, or manual overrides when Facebook HTML is ugly.
+4. Run the local dry-run pipeline. Outputs stay under gitignored
+   `manifest/fb_leads/`.
+
+Dry run against committed fixtures:
+
+    .venv/bin/python -m fb_leads run \
+        --captures tests/fixtures/fb_leads/captures \
+        --out-dir /tmp/fb_leads_dryrun
+
+Real local run:
+
+    .venv/bin/python -m fb_leads run \
+        --captures captures/fb \
+        --out-dir manifest/fb_leads
+
+Individual commands:
+
+    .venv/bin/python -m fb_leads ingest --captures captures/fb --leads manifest/fb_leads/leads.jsonl
+    .venv/bin/python -m fb_leads score --leads manifest/fb_leads/leads.jsonl
+    .venv/bin/python -m fb_leads report --leads manifest/fb_leads/leads.jsonl --out-dir manifest/fb_leads
+    .venv/bin/python -m fb_leads sync --csv manifest/fb_leads/review_queue.csv --leads manifest/fb_leads/leads.jsonl
+    .venv/bin/python -m fb_leads status --leads manifest/fb_leads/leads.jsonl
+
+Review workflow:
+- `leads.jsonl` is the local source of truth.
+- `review_queue.csv` is the editable operator queue; only `review_status` and
+  `review_notes` sync back into JSONL.
+- `review.html` is read-only for fast scanning. It uses local links back to raw
+  captures and escapes lead text.
+
+Compliance / safety stance:
+- v1 is file-based and read-only: no live fetching from Facebook.
+- `--live` on ingest refuses with a clear "not implemented in v1" message.
+- No outreach or automated messaging exists in this harness.
+- No credential/cookie storage, anti-detection, proxy rotation, CAPTCHA solving,
+  or rate-limit evasion exists in `fb_leads/`.
+- Facebook-derived lead data can contain personal display names; keep
+  `captures/` and `manifest/fb_leads/` local/gitignored.
+
+Future work, only after manual validation: browser-assisted capture behind
+human approval, optional LLM scoring layered on deterministic rules, official
+Graph API paths where authorized, and wiring approved leads into `src/agent_core`.
+
 ### Done / Next
 
 Done:
