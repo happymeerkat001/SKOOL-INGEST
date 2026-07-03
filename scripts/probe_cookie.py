@@ -1,6 +1,5 @@
 """Probe Skool cookies from .env to confirm we can still authenticate."""
 from pathlib import Path
-import os
 import re
 
 ENV_PATH = Path(__file__).resolve().parents[1] / '.env'
