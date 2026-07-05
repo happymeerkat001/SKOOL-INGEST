@@ -15,8 +15,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
-import sys
 from datetime import date
 from pathlib import Path
 
@@ -186,7 +184,7 @@ def main() -> int:
         )
         sections.append("")
         for appendix in appendices:
-            sections.append(f"---")
+            sections.append("---")
             sections.append("")
             sections.append(f"<!-- appendix: {appendix.name} -->")
             sections.append("")

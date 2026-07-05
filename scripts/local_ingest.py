@@ -23,15 +23,12 @@ import argparse
 import base64
 import csv
 import json
-import os
 import re
 import shutil
 import subprocess
-import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 try:
     from faster_whisper import WhisperModel
@@ -275,7 +272,7 @@ def build_markdown(
         lines.append(f"- Archived audio: `{archive_audio}`")
     lines.append(f"- Language: {transcript.get('language')}")
     lines.append(f"- Audio duration: {transcript.get('duration')}s")
-    lines.append(f"- Transcribed locally with faster-whisper")
+    lines.append("- Transcribed locally with faster-whisper")
     lines.append("")
     lines.append("## Transcript")
     lines.append("")

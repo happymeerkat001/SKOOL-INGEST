@@ -10,7 +10,6 @@ Treat it as the part to throttle if you want to spread the cost.
 """
 from __future__ import annotations
 
-import json
 import logging
 import time
 from collections.abc import Iterable

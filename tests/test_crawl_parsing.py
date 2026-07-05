@@ -12,13 +12,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from skool_ingest import manifest  # noqa: E402
 from skool_ingest.skool_crawl import (  # noqa: E402
     _extract_module_links,
     _extract_module_links_from_next_data,
     _extract_post_links,
     _extract_videos_from_post,
-    detect_embed,
     load_netscape_cookies,
 )
 

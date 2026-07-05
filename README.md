@@ -74,26 +74,75 @@ the `agent` extra: fastapi, uvicorn, httpx.
 Design:
 - **Deterministic-first**: binary gate failure (pets/kids/multi-occupant,
   income < 2.5x rent) returns COMPLIANCE_EXIT instantly — zero LLM tokens.
+- **Explicit live gate**: outbound sends require `ENGINE_MODE=live`. Any other
+  value, including unset, simulates even when `OPENPHONE_API_KEY` exists.
 - **Gemini via httpx REST** (`GEMINI_API_KEY`, `GEMINI_MODEL` env). Unset key
   = template-only mode. Any HTTP error falls back to the raw template.
 - **Speed-to-lead SLA**: per-request latency in body (`latency_ms`, `sla_met`
   < 20 s) and `X-Latency-MS` header; breach logs a warning.
-- **Outbound layer** (`router.py`): OpenPhone Messages API
-  (`https://api.openphone.com/v1/messages`, payload `{recipient, body, media?}`,
-  `Authorization: $OPENPHONE_API_KEY`). Missing/blank key → prints
-  "WARN: OPENPHONE_API_KEY unset. Operating in local simulation mode." and
-  echoes the payload to console instead of raising. n8n callback posts the
-  gate result to `N8N_WEBHOOK_URL` with `X-N8N-API-KEY: $N8N_API_KEY`.
+- **Outbound layer** (`router.py`): OpenPhone/Quo Messages API
+  (`https://api.quo.com/v1/messages`, payload `{content, from, to[]}`,
+  `Authorization: $OPENPHONE_API_KEY`). Simulation echoes the exact payload
+  shape without sending. n8n callback posts the gate result to
+  `N8N_WEBHOOK_URL` with `X-N8N-API-KEY: $N8N_API_KEY`.
+- **Webhook auth**: `POST /webhook/fb-inbound` accepts `X-Engine-Token` when
+  `ENGINE_WEBHOOK_TOKEN` is configured. `/healthz` stays open.
+- **Audit log**: every processed lead appends one JSONL line to
+  `logs/engine_dispatch.jsonl` (gitignored).
 - **Stateless**: n8n owns lead state; engine is pure per-request.
 
-Run:
+Local run:
 
     .venv/bin/python -m pip install -e ".[agent,dev]"
-    OPENPHONE_API_KEY=... GEMINI_API_KEY=... .venv/bin/python src/main.py
+    cp .env.example .env
+    # edit ENGINE_WEBHOOK_TOKEN; keep ENGINE_MODE=simulation until go-live
+    .venv/bin/python src/main.py
     curl -s localhost:8000/webhook/fb-inbound -X POST \
       -H 'content-type: application/json' \
+      -H "X-Engine-Token: $ENGINE_WEBHOOK_TOKEN" \
       -d '{"lead_id":"t1","messages":[{"text":"me and my dog"}],
-           "metadata":{"rent":800,"stage":1,"has_pets":true,"phone":"+15551234567"}}'
+           "metadata":{"rent":800,"stage":1,"has_pets":true,"phone":"+155****4567"}}'
+
+### Agent-core go-live runbook
+
+Stage A — deployed simulation, zero sends:
+
+1. Install deps: `.venv/bin/python -m pip install -e ".[agent,dev]"`.
+2. Copy `.env.example` to `.env` and set `ENGINE_WEBHOOK_TOKEN` (manual).
+3. Keep `ENGINE_MODE=simulation`; leave `GEMINI_API_KEY` unset.
+4. Start supervised locally:
+   - Copy `deploy/engine.launchd.plist` to `~/Library/LaunchAgents/` (manual).
+   - `launchctl load ~/Library/LaunchAgents/engine.launchd.plist` (manual).
+5. Run `scripts/engine_smoke.py --token "$ENGINE_WEBHOOK_TOKEN"`.
+6. Point the self-hosted n8n FB-inbound workflow at
+   `POST http://127.0.0.1:8000/webhook/fb-inbound` with header
+   `X-Engine-Token: $ENGINE_WEBHOOK_TOKEN` (manual).
+
+Stage B — live deterministic-only:
+
+1. Create/confirm OpenPhone/Quo API key and sending number (manual).
+2. Set `OPENPHONE_API_KEY` and `OPENPHONE_FROM_NUMBER` in `.env`.
+3. Confirm `GEMINI_API_KEY` is unset.
+4. Set `ENGINE_MODE=live`, restart launchd, and send one operator-witnessed
+   message to your own phone number before real leads (manual).
+5. Watch the first 10 live inbound leads manually before promotion.
+
+Stage C — live + Gemini personalization:
+
+1. Set `GEMINI_API_KEY` only after Stage B is stable (manual).
+2. Restart launchd and watch another 10 live leads manually.
+
+Kill switch / rollback:
+
+- Set `ENGINE_MODE=simulation` and restart launchd. This keeps the service up,
+  keeps n8n callbacks/audit logging, and stops OpenPhone sends.
+
+Operational checks:
+
+- Health: `curl -s http://127.0.0.1:8000/healthz`
+- Smoke: `scripts/engine_smoke.py --token "$ENGINE_WEBHOOK_TOKEN"`
+- Audit: `tail -f logs/engine_dispatch.jsonl`
+- Service logs: `tail -f logs/engine.out.log logs/engine.err.log`
 
 ## FB lead triage harness (`fb_leads/`)
 
@@ -200,17 +249,17 @@ Done:
       also rejected — blocked on R2 public dev URL toggle (see `TRANSCRIPT_LOL_R2_PLAYBOOK.md` §4)
 - [x] Architecture blueprint extracted (`FB_Lead_Qualification_Architecture.md`)
 - [x] Engine: gates, router, Gemini personalization, FastAPI webhook, SLA tracking
-- [x] Outbound: OpenPhone payload/header contract + simulation mode, n8n callback
+- [x] Outbound: verified OpenPhone/Quo payload/header contract, explicit simulation/live gate, n8n callback
+- [x] Agent-core go-live harness: webhook token auth, JSONL dispatch audit, launchd files, smoke script, staged runbook
 - [x] 111 tests green, ruff clean
 
 Next:
 - [ ] Enable R2 Public Development URL on skool-archive (Cloudflare dashboard, manual) →
       resubmit 13 failed recordings as pub-dev mp3 URLs + generate video index page
 - [ ] Paste chatbot persona (playbook §3) into transcript.lol UI (manual, no API)
-- [ ] Set real `OPENPHONE_API_KEY` / `N8N_WEBHOOK_URL` / `GEMINI_API_KEY` in `.env`,
-      verify against OpenPhone live docs (field names + auth scheme) before first send
-- [ ] Point self-hosted n8n FB-inbound workflow at `POST /webhook/fb-inbound`
-- [ ] Deploy engine (uvicorn behind reverse proxy or launchd) + smoke test end-to-end
+- [ ] Stage A/B/C operator go-live steps in the Agent-core runbook: set real
+      OpenPhone/Quo key + sending number, point n8n at `POST /webhook/fb-inbound`,
+      run the smoke test, then promote live deterministic-only before Gemini.
 - [ ] Optional: configure git remote and push (repo currently local-only)
 
 ## Why "skeleton" for the crawler?

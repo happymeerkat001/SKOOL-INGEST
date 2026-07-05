@@ -9,7 +9,7 @@ from unittest import mock
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 
-from media_archive import (
+from media_archive import (  # noqa: E402
     ArchiveConfig,
     archive,
     asset_name,
