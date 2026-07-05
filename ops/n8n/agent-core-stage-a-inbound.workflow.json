@@ -1,0 +1,76 @@
+[
+  {
+    "name": "Agent-core Stage A inbound simulation",
+    "description": "Stage A local workflow: receive an inbound lead webhook, forward it to Agent-core in simulation mode, and rely on Agent-core audit JSONL for proof. Token is read from n8n environment via $env.ENGINE_WEBHOOK_TOKEN.",
+    "active": false,
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "fb-stage-a-inbound",
+          "responseMode": "onReceived",
+          "responseData": "firstEntryJson",
+          "options": {}
+        },
+        "id": "7d0bdf76-1e1b-46e8-9c34-76c01fcff001",
+        "name": "FB inbound webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          260,
+          300
+        ],
+        "webhookId": "fb-stage-a-inbound"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://127.0.0.1:8000/webhook/fb-inbound",
+          "authentication": "none",
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Engine-Token",
+                "value": "={{ $env.ENGINE_WEBHOOK_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.body ?? $json) }}",
+          "options": {}
+        },
+        "id": "2ae37c3e-5e03-4c54-8b52-7a5a9086b002",
+        "name": "POST to Agent-core",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          520,
+          300
+        ]
+      }
+    ],
+    "connections": {
+      "FB inbound webhook": {
+        "main": [
+          [
+            {
+              "node": "POST to Agent-core",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "staticData": null,
+    "pinData": {},
+    "tags": []
+  }
+]
