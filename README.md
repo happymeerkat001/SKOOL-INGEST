@@ -112,7 +112,9 @@ Stage A — deployed simulation, zero sends:
 3. Keep `ENGINE_MODE=simulation`; leave `GEMINI_API_KEY` unset.
 4. Start supervised locally:
    - Copy `deploy/engine.launchd.plist` to `~/Library/LaunchAgents/` (manual).
-   - `launchctl load ~/Library/LaunchAgents/engine.launchd.plist` (manual).
+   - Ensure macOS Full Disk Access includes `/bin/bash` if the repo lives under
+     `~/Documents`; otherwise launchd can fail with `Operation not permitted`.
+   - `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/engine.launchd.plist` (manual).
 5. Run `scripts/engine_smoke.py --token "$ENGINE_WEBHOOK_TOKEN"`.
 6. Point the self-hosted n8n FB-inbound workflow at
    `POST http://127.0.0.1:8000/webhook/fb-inbound` with header

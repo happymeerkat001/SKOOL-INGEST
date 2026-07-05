@@ -318,15 +318,16 @@ class EngineConfigTests(unittest.TestCase):
 
 class WebhookTests(unittest.TestCase):
     def test_disqualified_lead_round_trip(self):
-        with TestClient(app) as client:
-            resp = client.post(
-                "/webhook/fb-inbound",
-                json={
-                    "lead_id": "t1",
-                    "messages": [{"text": "Me and my dog need a room"}],
-                    "metadata": {"rent": 800, "stage": 1, "has_pets": True},
-                },
-            )
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with TestClient(app) as client:
+                resp = client.post(
+                    "/webhook/fb-inbound",
+                    json={
+                        "lead_id": "t1",
+                        "messages": [{"text": "Me and my dog need a room"}],
+                        "metadata": {"rent": 800, "stage": 1, "has_pets": True},
+                    },
+                )
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
         self.assertEqual(body["reply"], COMPLIANCE_EXIT)
@@ -337,16 +338,17 @@ class WebhookTests(unittest.TestCase):
         self.assertIn("X-Latency-MS", resp.headers)
 
     def test_webhook_dispatch_simulated_without_openphone_key(self):
-        with TestClient(app) as client:
-            with mock.patch("builtins.print"):
-                resp = client.post(
-                    "/webhook/fb-inbound",
-                    json={
-                        "lead_id": "t2",
-                        "messages": [{"text": "Just me, no pets"}],
-                        "metadata": {"rent": 800, "stage": 1, "phone": "+15551234567"},
-                    },
-                )
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with TestClient(app) as client:
+                with mock.patch("builtins.print"):
+                    resp = client.post(
+                        "/webhook/fb-inbound",
+                        json={
+                            "lead_id": "t2",
+                            "messages": [{"text": "Just me, no pets"}],
+                            "metadata": {"rent": 800, "stage": 1, "phone": "+155****4567"},
+                        },
+                    )
         body = resp.json()
         self.assertTrue(body["passed"])
         self.assertTrue(body["dispatch"]["simulated"])
@@ -356,15 +358,16 @@ class WebhookTests(unittest.TestCase):
         self.assertEqual(body["dispatch"]["payload"]["content"], body["reply"])
 
     def test_webhook_no_phone_no_dispatch(self):
-        with TestClient(app) as client:
-            resp = client.post(
-                "/webhook/fb-inbound",
-                json={
-                    "lead_id": "t3",
-                    "messages": [{"text": "hi"}],
-                    "metadata": {"rent": 800, "stage": 1},
-                },
-            )
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with TestClient(app) as client:
+                resp = client.post(
+                    "/webhook/fb-inbound",
+                    json={
+                        "lead_id": "t3",
+                        "messages": [{"text": "hi"}],
+                        "metadata": {"rent": 800, "stage": 1},
+                    },
+                )
         self.assertIsNone(resp.json()["dispatch"])
 
     def test_webhook_requires_token_when_configured(self):
