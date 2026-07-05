@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.leon.skool-ingest.n8n</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/leon/Documents/Code/skool-ingest/deploy/run_n8n.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/leon/Documents/Code/skool-ingest</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/leon/Documents/Code/skool-ingest/logs/n8n.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/leon/Documents/Code/skool-ingest/logs/n8n.err.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>N8N_PORT</key>
+    <string>5678</string>
+  </dict>
+</dict>
+</plist>

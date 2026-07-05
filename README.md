@@ -116,9 +116,19 @@ Stage A — deployed simulation, zero sends:
      `~/Documents`; otherwise launchd can fail with `Operation not permitted`.
    - `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/engine.launchd.plist` (manual).
 5. Run `scripts/engine_smoke.py --token "$ENGINE_WEBHOOK_TOKEN"`.
-6. Point the self-hosted n8n FB-inbound workflow at
+6. Import or confirm the versioned Stage A n8n workflow in
+   `ops/n8n/agent-core-stage-a-inbound.workflow.json`. It exposes
+   `POST http://127.0.0.1:5678/webhook/fb-stage-a-inbound` and forwards to
    `POST http://127.0.0.1:8000/webhook/fb-inbound` with header
-   `X-Engine-Token: $ENGINE_WEBHOOK_TOKEN` (manual).
+   `X-Engine-Token: ={{ $env.ENGINE_WEBHOOK_TOKEN }}`. See
+   `ops/n8n/README.md` for import/activation notes.
+7. Start n8n with `ENGINE_WEBHOOK_TOKEN` in its environment. For supervised local
+   startup, copy `deploy/n8n.launchd.plist` to
+   `~/Library/LaunchAgents/com.leon.skool-ingest.n8n.plist` and bootstrap
+   `gui/$(id -u)/com.leon.skool-ingest.n8n`. Then run
+   `.venv/bin/python scripts/n8n_stage_a_smoke.py`. A pass proves the path
+   n8n → Agent-core → `logs/engine_dispatch.jsonl` is active and still
+   simulated (`sent=false`, `simulated=true`).
 
 Stage B — live deterministic-only:
 
