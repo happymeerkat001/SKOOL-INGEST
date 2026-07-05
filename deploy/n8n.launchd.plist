@@ -27,8 +27,22 @@
 
   <key>EnvironmentVariables</key>
   <dict>
+    <key>N8N_HOST</key>
+    <string>127.0.0.1</string>
+    <key>N8N_LISTEN_ADDRESS</key>
+    <string>127.0.0.1</string>
+    <key>N8N_PROTOCOL</key>
+    <string>http</string>
     <key>N8N_PORT</key>
     <string>5678</string>
+    <key>N8N_RUNNERS_ENABLED</key>
+    <string>true</string>
+    <key>DB_SQLITE_POOL_SIZE</key>
+    <string>5</string>
+    <key>N8N_BLOCK_ENV_ACCESS_IN_NODE</key>
+    <string>false</string>
+    <key>N8N_GIT_NODE_DISABLE_BARE_REPOS</key>
+    <string>true</string>
   </dict>
 </dict>
 </plist>

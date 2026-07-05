@@ -32,6 +32,18 @@ if [[ -z "${ENGINE_WEBHOOK_TOKEN}" ]]; then
 fi
 
 export ENGINE_WEBHOOK_TOKEN
+
+# Local-only Stage A n8n service. Keep env access available because the
+# workflow reads ENGINE_WEBHOOK_TOKEN via $env.ENGINE_WEBHOOK_TOKEN, and set
+# the n8n 1.123.x deprecation flags explicitly so launchd starts quietly.
+export N8N_HOST="${N8N_HOST:-127.0.0.1}"
+export N8N_LISTEN_ADDRESS="${N8N_LISTEN_ADDRESS:-127.0.0.1}"
+export N8N_PROTOCOL="${N8N_PROTOCOL:-http}"
 export N8N_PORT="${N8N_PORT:-5678}"
+export N8N_RUNNERS_ENABLED="${N8N_RUNNERS_ENABLED:-true}"
+export DB_SQLITE_POOL_SIZE="${DB_SQLITE_POOL_SIZE:-5}"
+export N8N_BLOCK_ENV_ACCESS_IN_NODE="${N8N_BLOCK_ENV_ACCESS_IN_NODE:-false}"
+export N8N_GIT_NODE_DISABLE_BARE_REPOS="${N8N_GIT_NODE_DISABLE_BARE_REPOS:-true}"
+
 mkdir -p logs
 exec /opt/homebrew/bin/n8n start

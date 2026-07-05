@@ -40,10 +40,20 @@ PY
 For supervised local startup, install the committed LaunchAgent:
 
 ```bash
+mkdir -p ~/Library/LaunchAgents
 cp deploy/n8n.launchd.plist ~/Library/LaunchAgents/com.leon.skool-ingest.n8n.plist
+launchctl bootout gui/$(id -u)/com.leon.skool-ingest.n8n 2>/dev/null || true
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.leon.skool-ingest.n8n.plist
 launchctl kickstart -k gui/$(id -u)/com.leon.skool-ingest.n8n
 ```
+
+The LaunchAgent runs n8n on `127.0.0.1:5678` only and sets the n8n 1.123.x
+runtime/deprecation flags explicitly:
+
+- `N8N_RUNNERS_ENABLED=true`
+- `DB_SQLITE_POOL_SIZE=5`
+- `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` so the workflow can read `$env.ENGINE_WEBHOOK_TOKEN`
+- `N8N_GIT_NODE_DISABLE_BARE_REPOS=true`
 
 n8n logs go to `logs/n8n.out.log` and `logs/n8n.err.log`.
 
