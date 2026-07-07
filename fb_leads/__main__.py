@@ -12,6 +12,7 @@ from . import ingest
 from . import post_templates
 from . import report
 from . import scoring
+from . import suggest
 from .models import load as load_leads
 
 
@@ -127,12 +128,20 @@ def _copy_text_from_args(args: argparse.Namespace, lead_slots: dict[str, str]) -
 
 
 def cmd_draft_list(args: argparse.Namespace) -> int:
-    ingest.print_json(drafts.status_summary(Path(args.drafts)))
+    summary = drafts.status_summary(Path(args.drafts))
+    summary["suggested_pending"] = suggest.suggested_pending_count(Path(args.drafts))
+    ingest.print_json(summary)
     return 0
 
 
 def cmd_draft_export(args: argparse.Namespace) -> int:
-    summary = draft_report.generate_queue(Path(args.drafts), Path(args.out_dir))
+    leads_path = Path(args.leads) if args.leads else None
+    summary = draft_report.generate_queue(
+        Path(args.drafts),
+        Path(args.out_dir),
+        only_approved=args.only_approved,
+        leads_path=leads_path,
+    )
     ingest.print_json(summary)
     return 0
 
@@ -146,6 +155,16 @@ def cmd_draft_sync(args: argparse.Namespace) -> int:
 def cmd_draft_publish(args: argparse.Namespace) -> int:
     _ = args
     return drafts.refuse_publish()
+
+
+def cmd_draft_suggest(args: argparse.Namespace) -> int:
+    summary = suggest.suggest_drafts(
+        Path(args.leads),
+        Path(args.drafts),
+        tz_name=args.tz or None,
+    )
+    ingest.print_json(summary)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -213,6 +232,16 @@ def main(argv: list[str] | None = None) -> int:
     pdraft_export = sub.add_parser("draft-export", help="export post_queue CSV/HTML/Markdown")
     pdraft_export.add_argument("--drafts", default="manifest/fb_leads/post_drafts.jsonl")
     pdraft_export.add_argument("--out-dir", default="manifest/fb_leads")
+    pdraft_export.add_argument(
+        "--leads",
+        default="manifest/fb_leads/leads.jsonl",
+        help="optional JSONL store for source_lead provenance",
+    )
+    pdraft_export.add_argument(
+        "--only-approved",
+        action="store_true",
+        help="filter exports to drafts with approved_by_human=yes",
+    )
     pdraft_export.set_defaults(func=cmd_draft_export)
 
     pdraft_sync = sub.add_parser("draft-sync", help="merge post_queue.csv checklist edits")
@@ -224,6 +253,15 @@ def main(argv: list[str] | None = None) -> int:
     pdraft_publish.add_argument("--drafts", default="manifest/fb_leads/post_drafts.jsonl")
     pdraft_publish.add_argument("--i-understand-official-api", action="store_true")
     pdraft_publish.set_defaults(func=cmd_draft_publish)
+
+    pdraft_suggest = sub.add_parser(
+        "draft-suggest",
+        help="create unapproved drafts from approved leads (idempotent)",
+    )
+    pdraft_suggest.add_argument("--leads", default="manifest/fb_leads/leads.jsonl")
+    pdraft_suggest.add_argument("--drafts", default="manifest/fb_leads/post_drafts.jsonl")
+    pdraft_suggest.add_argument("--tz", default="", help="IANA timezone name")
+    pdraft_suggest.set_defaults(func=cmd_draft_suggest)
 
     args = parser.parse_args(argv)
     return args.func(args)

@@ -216,9 +216,22 @@ Posting draft queue:
   2:30am posting cadence without auto-posting to Facebook.
 - `draft-add` creates a draft from a deterministic template or operator-written
   copy. The default slot is the next free 2:30am local time, one draft per night.
+- `draft-suggest` reads `manifest/fb_leads/leads.jsonl` and creates one
+  unapproved draft per approved lead that does not already have a draft
+  (deduped by `lead_ids`). The template is chosen from the lead's tags via a
+  fixed table: `coliving → coliving_room`, else `room_supply / owner /
+  partnership → room_listing`. Missing slot values fall back to a visible
+  `[FILL: name]` marker in `copy_text` so the operator fills them in
+  `post_queue.csv` before approval. Re-runs are idempotent — no duplicates.
 - `draft-export` writes `post_queue.csv`, `post_queue.html`, and
   `post_queue.md`; the operator copies text from those files and manually
   schedules it in Meta Business Suite.
+  - `--leads` resolves source-lead provenance so suggested drafts show
+    `<lead_id> — <lead title>` in the `source_lead` column.
+  - `--only-approved` filters the three artifacts to drafts with
+    `approved_by_human=yes`, producing a paste-ready view.
+- `draft-list` summary reports `suggested_pending` separately (suggested
+  drafts awaiting operator approval).
 - `draft-sync` reads back only checklist fields:
   `approved_by_human`, `scheduled_in_meta_business_suite`, `posted_at`, `notes`.
 - `draft-publish` is a refusal stub in v1. It always exits non-zero and points
@@ -229,9 +242,25 @@ Draft commands:
     .venv/bin/python -m fb_leads draft-add --topic room-303 --template room_listing \
         --price '$650/mo' --location 'Houston, TX' --room-desc 'furnished private room' \
         --move-in 'August 1' --surface marketplace
+    .venv/bin/python -m fb_leads draft-suggest --leads manifest/fb_leads/leads.jsonl \
+        --drafts manifest/fb_leads/post_drafts.jsonl --tz America/Chicago
     .venv/bin/python -m fb_leads draft-list --drafts manifest/fb_leads/post_drafts.jsonl
-    .venv/bin/python -m fb_leads draft-export --drafts manifest/fb_leads/post_drafts.jsonl --out-dir manifest/fb_leads
+    .venv/bin/python -m fb_leads draft-export --drafts manifest/fb_leads/post_drafts.jsonl \
+        --leads manifest/fb_leads/leads.jsonl --out-dir manifest/fb_leads
+    .venv/bin/python -m fb_leads draft-export --drafts manifest/fb_leads/post_drafts.jsonl \
+        --leads manifest/fb_leads/leads.jsonl --out-dir manifest/fb_leads --only-approved
     .venv/bin/python -m fb_leads draft-sync --csv manifest/fb_leads/post_queue.csv --drafts manifest/fb_leads/post_drafts.jsonl
+
+Suggested-draft loop (operator-owned at every step):
+
+1. `draft-suggest` (Hermes/Cron-safe, idempotent).
+2. Operator opens `post_queue.csv`, fills any `[FILL: ...]` markers,
+   and flips `approved_by_human` from `no` to `yes`.
+3. `draft-sync` to round-trip the edits back to `post_drafts.jsonl`.
+4. `draft-export --only-approved` to regenerate `post_queue.*` with only
+   paste-ready rows.
+5. Operator copies text into Meta Business Suite at the 2:30am slots (manual).
+   Suggestions never bypass approval; nothing posts or sends automatically.
 
 Template safety note: template copy is intentionally static and should receive a
 human fair-housing / ToS review whenever templates change. Screening constraints

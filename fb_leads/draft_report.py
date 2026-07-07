@@ -22,6 +22,8 @@ QUEUE_COLUMNS: tuple[str, ...] = (
     "location",
     "images_note",
     "lead_ids",
+    "source_lead",
+    "template_id",
     "approved_by_human",
     "scheduled_in_meta_business_suite",
     "posted_at",
@@ -29,21 +31,32 @@ QUEUE_COLUMNS: tuple[str, ...] = (
 )
 
 
-def generate_queue(drafts_path: Path, out_dir: Path) -> dict[str, Any]:
+def generate_queue(
+    drafts_path: Path,
+    out_dir: Path,
+    *,
+    only_approved: bool = False,
+    leads_path: Path | None = None,
+) -> dict[str, Any]:
     rows = sorted(load(drafts_path).values(), key=lambda draft: draft.scheduled_for)
+    if only_approved:
+        rows = [draft for draft in rows if draft.approved_by_human == "yes"]
+    leads_index = _load_leads_index(leads_path)
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / "post_queue.csv"
     html_path = out_dir / "post_queue.html"
     md_path = out_dir / "post_queue.md"
-    _write_csv(csv_path, rows)
-    _write_html(html_path, rows)
-    _write_markdown(md_path, rows)
+    _write_csv(csv_path, rows, leads_index=leads_index)
+    _write_html(html_path, rows, leads_index=leads_index)
+    _write_markdown(md_path, rows, leads_index=leads_index)
     return {
         "rows": len(rows),
+        "only_approved": only_approved,
         "csv_path": str(csv_path),
         "html_path": str(html_path),
         "markdown_path": str(md_path),
         "drafts_path": str(drafts_path),
+        "leads_path": str(leads_path) if leads_path else "",
     }
 
 
@@ -109,16 +122,16 @@ def sync_exit_code(summary: dict[str, Any]) -> int:
     return 1 if int(summary.get("invalid", 0)) else 0
 
 
-def _write_csv(path: Path, rows: list[PostDraft]) -> None:
+def _write_csv(path: Path, rows: list[PostDraft], *, leads_index: dict[str, str] | None = None) -> None:
     with path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=list(QUEUE_COLUMNS))
         writer.writeheader()
         for draft in rows:
-            writer.writerow(_csv_row(draft))
+            writer.writerow(_csv_row(draft, leads_index=leads_index))
 
 
-def _write_html(path: Path, rows: list[PostDraft]) -> None:
-    table_rows = "\n".join(_html_row(draft) for draft in rows)
+def _write_html(path: Path, rows: list[PostDraft], *, leads_index: dict[str, str] | None = None) -> None:
+    table_rows = "\n".join(_html_row(draft, leads_index=leads_index) for draft in rows)
     doc = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <title>Facebook Posting Draft Queue</title>
@@ -132,7 +145,7 @@ def _write_html(path: Path, rows: list[PostDraft]) -> None:
 <h1>Facebook Posting Draft Queue</h1>
 <p>{len(rows)} drafts. Schedule manually in Meta Business Suite; this page never posts.</p>
 <table>
-<thead><tr><th>Slot</th><th>Topic</th><th>Copy</th><th>Checklist</th></tr></thead>
+<thead><tr><th>Slot</th><th>Topic</th><th>Copy</th><th>Source lead</th><th>Template</th><th>Checklist</th></tr></thead>
 <tbody>
 {table_rows}
 </tbody>
@@ -141,7 +154,7 @@ def _write_html(path: Path, rows: list[PostDraft]) -> None:
     path.write_text(doc, encoding="utf-8")
 
 
-def _write_markdown(path: Path, rows: list[PostDraft]) -> None:
+def _write_markdown(path: Path, rows: list[PostDraft], *, leads_index: dict[str, str] | None = None) -> None:
     chunks = ["# Facebook Posting Draft Queue", "", f"{len(rows)} drafts.", ""]
     for draft in rows:
         chunks.extend(
@@ -149,6 +162,9 @@ def _write_markdown(path: Path, rows: list[PostDraft]) -> None:
                 f"## {draft.scheduled_for} — {draft.topic}",
                 "",
                 f"- Surface: {draft.target_surface}",
+                f"- Template: {draft.template_id or '(free copy)'}",
+                f"- Source lead: {_format_source_lead(draft, leads_index)}",
+                f"- Lead ids: {', '.join(draft.lead_ids) or '(none)'}",
                 f"- Approved: {draft.approved_by_human}",
                 f"- Scheduled in Meta Business Suite: {draft.scheduled_in_meta_business_suite}",
                 f"- Posted at: {draft.posted_at or '(not posted)'}",
@@ -163,7 +179,28 @@ def _write_markdown(path: Path, rows: list[PostDraft]) -> None:
     path.write_text("\n".join(chunks), encoding="utf-8")
 
 
-def _csv_row(draft: PostDraft) -> dict[str, str]:
+def _load_leads_index(leads_path: Path | None) -> dict[str, str]:
+    if not leads_path or not leads_path.exists():
+        return {}
+    try:
+        from .models import load as load_leads
+    except Exception:
+        return {}
+    return {lead.id: (lead.title or "") for lead in load_leads(leads_path).values()}
+
+
+def _format_source_lead(draft: PostDraft, leads_index: dict[str, str] | None) -> str:
+    if not draft.lead_ids:
+        return ""
+    if not leads_index:
+        return draft.lead_ids[0]
+    title = leads_index.get(draft.lead_ids[0], "")
+    if title:
+        return f"{draft.lead_ids[0]} — {title}"
+    return draft.lead_ids[0]
+
+
+def _csv_row(draft: PostDraft, *, leads_index: dict[str, str] | None = None) -> dict[str, str]:
     return {
         "id": draft.id,
         "scheduled_for": draft.scheduled_for,
@@ -175,6 +212,8 @@ def _csv_row(draft: PostDraft) -> dict[str, str]:
         "location": draft.location,
         "images_note": draft.images_note,
         "lead_ids": ",".join(draft.lead_ids),
+        "source_lead": _format_source_lead(draft, leads_index),
+        "template_id": draft.template_id,
         "approved_by_human": draft.approved_by_human,
         "scheduled_in_meta_business_suite": draft.scheduled_in_meta_business_suite,
         "posted_at": draft.posted_at,
@@ -182,7 +221,7 @@ def _csv_row(draft: PostDraft) -> dict[str, str]:
     }
 
 
-def _html_row(draft: PostDraft) -> str:
+def _html_row(draft: PostDraft, *, leads_index: dict[str, str] | None = None) -> str:
     copy = html.escape(draft.copy_text)
     checklist = html.escape(
         f"approved: {draft.approved_by_human}\n"
@@ -191,11 +230,15 @@ def _html_row(draft: PostDraft) -> str:
         f"notes: {draft.notes}"
     )
     title = html.escape(draft.title)
+    source_lead = html.escape(_format_source_lead(draft, leads_index) or "(none)")
+    template_id = html.escape(draft.template_id or "(free copy)")
     return (
         f"<tr><td>{html.escape(draft.scheduled_for)}</td>"
         f"<td><strong>{html.escape(draft.topic)}</strong><br>{title}<br>"
         f"<small>{html.escape(draft.target_surface)}</small></td>"
         f"<td><pre>{copy}</pre></td>"
+        f"<td><code>{source_lead}</code></td>"
+        f"<td><code>{template_id}</code></td>"
         f"<td><pre>{checklist}</pre></td></tr>"
     )
 
