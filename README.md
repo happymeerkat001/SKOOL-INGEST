@@ -262,17 +262,20 @@ Done:
 - [x] Architecture blueprint extracted (`FB_Lead_Qualification_Architecture.md`)
 - [x] Engine: gates, router, Gemini personalization, FastAPI webhook, SLA tracking
 - [x] Outbound: verified OpenPhone/Quo payload/header contract, explicit simulation/live gate, n8n callback
-- [x] Agent-core go-live harness: webhook token auth, JSONL dispatch audit, launchd files, smoke script, staged runbook
-- [x] 111 tests green, ruff clean
+- [x] Agent-core go-live harness (PR #1): webhook token auth, JSONL dispatch audit, launchd files, smoke script, staged runbook
+- [x] Agent-core webhook test isolation (PR #2): keep local `.env` from breaking webhook tests
+- [x] n8n Stage A reproducible + supervised (PRs #3 & #4): versioned workflow in `ops/n8n/`, e2e smoke script, launchd-supervised n8n, runbook in `ops/n8n/README.md`
+- [x] 192 tests green, ruff clean
 
 Next:
+- [ ] Stage B operator runbook: set real OpenPhone/Quo key + sending number, set
+      `ENGINE_ALLOWED_RECIPIENTS` to operator's own phone, flip `ENGINE_MODE=live`,
+      witnessed deterministic first send. See README Stage B section + the
+      pre-live gates plan (`docs/plans/2026-07-06-001-feat-pre-live-workflow-gates-plan.md`)
+      for the hardening layer before going live.
 - [ ] Enable R2 Public Development URL on skool-archive (Cloudflare dashboard, manual) →
       resubmit 13 failed recordings as pub-dev mp3 URLs + generate video index page
 - [ ] Paste chatbot persona (playbook §3) into transcript.lol UI (manual, no API)
-- [ ] Stage A/B/C operator go-live steps in the Agent-core runbook: set real
-      OpenPhone/Quo key + sending number, point n8n at `POST /webhook/fb-inbound`,
-      run the smoke test, then promote live deterministic-only before Gemini.
-- [ ] Optional: configure git remote and push (repo currently local-only)
 
 ## Why "skeleton" for the crawler?
 
