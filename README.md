@@ -164,6 +164,18 @@ store credentials/cookies, send messages, post, rotate proxies, solve CAPTCHAs,
 or bypass platform controls. A logged-in human saves pages/text/CSV exports they
 are authorized to view, then the local pipeline parses and scores those files.
 
+**No new posts going out for several days? This is manual by design — nothing
+in this repo auto-fetches Facebook or auto-posts.** Run in order:
+
+    # 1. Save fresh captures into captures/fb/ (Save Page As / .txt / CSV export)
+    .venv/bin/python -m fb_leads run --captures captures/fb --out-dir manifest/fb_leads
+    # 2. Approve rows in manifest/fb_leads/review_queue.csv, then sync back
+    .venv/bin/python -m fb_leads sync --csv manifest/fb_leads/review_queue.csv --leads manifest/fb_leads/leads.jsonl
+    # 3. Generate + export paste-ready drafts
+    .venv/bin/python -m fb_leads draft-suggest --leads manifest/fb_leads/leads.jsonl --drafts manifest/fb_leads/post_drafts.jsonl
+    .venv/bin/python -m fb_leads draft-export --drafts manifest/fb_leads/post_drafts.jsonl --leads manifest/fb_leads/leads.jsonl --out-dir manifest/fb_leads --only-approved
+    # 4. Paste manifest/fb_leads/post_queue.md into Meta Business Suite at the 2:30am slot
+
 Layout:
 
     fb_leads/
